@@ -4,9 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>3D/AR Viewer</title>
-  <!-- Telegram WebApp JS -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- Three.js -->
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
   <script src="https://unpkg.com/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
@@ -35,6 +33,7 @@
       background: #111; border-radius: 12px;
       width: 95vw; height: 60vw; max-width: 600px; max-height: 60vh;
       margin-bottom: 1em;
+      touch-action: none;
     }
     .btn {
       background: var(--tg-theme-button-color, #567ac6);
@@ -43,16 +42,19 @@
       padding: 0.7em 1.5em; font-size: 1em;
       cursor: pointer; margin-top: 1em;
       transition: background 0.2s;
+      display: block;
     }
     .btn:active { background: #40518b; }
     .ar-hint { margin-top: 1em; color: #aaa; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <div class="header" id="modelTitle">Загрузка...</div>
   <div class="container">
     <canvas id="viewerCanvas"></canvas>
-    <button class="btn" id="arBtn">Открыть в AR</button>
+    <a id="usdzLink" rel="ar" class="hidden"><button class="btn" id="arBtnIOS">Открыть в AR (iOS)</button></a>
+    <button class="btn hidden" id="arBtnAndroid">Открыть в AR</button>
     <div class="desc" id="modelDesc"></div>
     <div class="ar-hint" id="arHint"></div>
   </div>
@@ -66,6 +68,7 @@
     const modelUrl = getQueryParam('url');
     const modelTitle = decodeURIComponent(getQueryParam('title') || '');
     const modelDesc = decodeURIComponent(getQueryParam('desc') || '');
+    const usdzUrl = getQueryParam('usdz') || '';
 
     document.getElementById('modelTitle').textContent = modelTitle || '3D/AR Viewer';
     document.getElementById('modelDesc').textContent = modelDesc || '';
@@ -118,26 +121,37 @@
       renderer.render(scene, camera);
     }
 
-    // --- AR Button ---
-    const arBtn = document.getElementById('arBtn');
+    // --- AR кнопки для iOS и Android ---
+    const arBtnIOS = document.getElementById('arBtnIOS');
+    const arBtnAndroid = document.getElementById('arBtnAndroid');
+    const usdzLink = document.getElementById('usdzLink');
     const arHint = document.getElementById('arHint');
 
+    // Определение платформы
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     let arSupported = false;
-    // Проверка поддержки WebXR + AR
-    if (navigator.xr && navigator.xr.isSessionSupported) {
+
+    if (isIOS && usdzUrl) {
+      usdzLink.href = usdzUrl;
+      usdzLink.classList.remove('hidden');
+      arHint.textContent = "AR просмотр доступен через Apple Quick Look.";
+    } else if (navigator.xr && navigator.xr.isSessionSupported) {
+      // Android: WebXR
       navigator.xr.isSessionSupported('immersive-ar').then(supported=>{
         arSupported = supported;
-        if (!arSupported) {
-          arBtn.style.display = 'none';
+        if (arSupported) {
+          arBtnAndroid.classList.remove('hidden');
+          arHint.textContent = "AR просмотр доступен через WebXR.";
+        } else {
+          arBtnAndroid.classList.add('hidden');
           arHint.textContent = "AR просмотр не поддерживается на этом устройстве.";
         }
       });
     } else {
-      arBtn.style.display = 'none';
-      arHint.textContent = "WebXR AR не поддерживается браузером.";
+      arHint.textContent = "AR просмотр не поддерживается на этом устройстве.";
     }
 
-    arBtn.onclick = () => {
+    arBtnAndroid.onclick = () => {
       if (!arSupported) {
         alert("AR не поддерживается!");
         return;
