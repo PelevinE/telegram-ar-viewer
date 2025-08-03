@@ -2,205 +2,113 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>3D/AR Viewer</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/loaders/GLTFLoader.js"></script>
   <style>
-    body {
-      margin: 0; font-family: system-ui, sans-serif;
-      background: var(--tg-theme-bg-color, #202124);
-      color: var(--tg-theme-text-color, #fff);
+    body { margin: 0; background: #111; color: #fff; font-family: system-ui, sans-serif;}
+    .container { max-width: 600px; margin: 0 auto; padding: 1.5em 1em; }
+    h1 { text-align: center; margin-top: 0.5em; }
+    #viewer { width: 100%; height: 60vw; max-width: 100vw; max-height: 60vh; background: #000; border-radius: 12px; }
+    .btn-ar {
+      margin: 24px auto 0 auto; display: block;
+      padding: 14px 26px; background: #347ae2;
+      color: white; border: none; border-radius: 10px;
+      font-size: 1.15em; font-weight: 500; box-shadow: 0 2px 12px #0005;
+      cursor: pointer; transition: background 0.18s;
     }
-    .header {
-      padding: 1em; font-size: 1.3em; font-weight: bold;
-      background: var(--tg-theme-header-bg-color, #19191a);
-      text-align: center;
-      border-bottom: 1px solid #444;
-    }
-    .container {
-      max-width: 900px; margin: 0 auto; padding: 1em;
-      display: flex; flex-direction: column; align-items: center;
-    }
-    .desc {
-      background: var(--tg-theme-secondary-bg-color, #23232b);
-      padding: 1em; border-radius: 10px; margin: 1em 0; width: 100%;
-      max-width: 450px; font-size: 1.05em;
-    }
-    #viewerCanvas {
-      background: #111; border-radius: 12px;
-      width: 95vw; height: 60vw; max-width: 600px; max-height: 60vh;
-      margin-bottom: 1em;
-      touch-action: none;
-    }
-    .btn {
-      background: var(--tg-theme-button-color, #567ac6);
-      color: var(--tg-theme-button-text-color, #fff);
-      border: none; border-radius: 8px;
-      padding: 0.7em 1.5em; font-size: 1em;
-      cursor: pointer; margin-top: 1em;
-      transition: background 0.2s;
-      display: block;
-    }
-    .btn:active { background: #40518b; }
-    .ar-hint { margin-top: 1em; color: #aaa; }
-    .hidden { display: none; }
+    .btn-ar:active { background: #235bb2; }
+    .desc { margin-top: 1em; padding: 1em; background: #222; border-radius: 8px; }
   </style>
 </head>
 <body>
-  <div class="header" id="modelTitle">Загрузка...</div>
   <div class="container">
-    <canvas id="viewerCanvas"></canvas>
-    <a id="usdzLink" rel="ar" class="hidden"><button class="btn" id="arBtnIOS">Открыть в AR (iOS)</button></a>
-    <button class="btn hidden" id="arBtnAndroid">Открыть в AR</button>
-    <div class="desc" id="modelDesc"></div>
-    <div class="ar-hint" id="arHint"></div>
+    <h1 id="title">AR Viewer</h1>
+    <div id="viewer"></div>
+    <div id="ar-button-wrapper"></div>
+    <div class="desc" id="desc"></div>
   </div>
 
   <script>
-    // --- Получение параметров из URL ---
-    function getQueryParam(name) {
-      const url = new URL(window.location.href);
-      return url.searchParams.get(name) || '';
+    // Получаем параметры из URL
+    const params = new URLSearchParams(window.location.search);
+    const glbUrl = params.get('url');
+    const usdzUrl = params.get('usdz');
+    const title = params.get('title') || 'AR Viewer';
+    const desc = params.get('desc') || '';
+
+    document.getElementById('title').textContent = title;
+    document.getElementById('desc').textContent = decodeURIComponent(desc);
+
+    // Простая проверка на iOS
+    const isIOS = (() => {
+      const ua = navigator.userAgent;
+      return /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+    })();
+
+    // Проверка на Safari (по фичам и userAgent)
+    const isSafari = (() => {
+      const ua = navigator.userAgent;
+      return isIOS && (
+        ua.includes('Safari') &&
+        !ua.includes('CriOS') && // Chrome on iOS
+        !ua.includes('FxiOS')    // Firefox on iOS
+      );
+    })();
+
+    // Добавляем AR-кнопку, только если это реально iOS Safari и usdzUrl есть
+    if (isSafari && usdzUrl) {
+      const a = document.createElement('a');
+      a.setAttribute('rel', 'ar');
+      a.setAttribute('href', usdzUrl);
+      a.innerHTML = '<button class="btn-ar">Открыть в AR (iOS)</button>';
+      document.getElementById('ar-button-wrapper').appendChild(a);
     }
-    const modelUrl = getQueryParam('url');
-    const modelTitle = decodeURIComponent(getQueryParam('title') || '');
-    const modelDesc = decodeURIComponent(getQueryParam('desc') || '');
-    const usdzUrl = getQueryParam('usdz') || '';
 
-    document.getElementById('modelTitle').textContent = modelTitle || '3D/AR Viewer';
-    document.getElementById('modelDesc').textContent = modelDesc || '';
+    // 3D viewer (Three.js GLB)
+    if (glbUrl) {
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, viewer.clientWidth / viewer.clientHeight, 0.1, 100);
+      camera.position.set(0, 0, 2.2);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+      document.getElementById('viewer').appendChild(renderer.domElement);
 
-    // --- Three.js Setup ---
-    let scene, camera, renderer, controls, modelObj;
-    const canvas = document.getElementById('viewerCanvas');
-    initThree();
+      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1.25);
+      scene.add(light);
 
-    function initThree() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(60, canvas.clientWidth/canvas.clientHeight, 0.01, 100);
-      camera.position.set(0, 1, 3);
-
-      renderer = new THREE.WebGLRenderer({canvas, alpha:true, antialias:true});
-      renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-
-      scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-      controls = new THREE.OrbitControls(camera, renderer.domElement);
-
-      // Load model
-      if (!modelUrl) {
-        alert("Не передан параметр url (3D модель).");
-        return;
-      }
       const loader = new THREE.GLTFLoader();
-      loader.load(modelUrl, function(gltf){
-        modelObj = gltf.scene;
-        scene.add(modelObj);
-        fitCameraToObject(camera, modelObj);
-        animate();
-      }, undefined, err=>{
-        alert("Ошибка загрузки модели:\n" + err);
+      loader.load(glbUrl, function(gltf) {
+        scene.add(gltf.scene);
+        // Центрируем модель
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        const center = box.getCenter(new THREE.Vector3());
+        gltf.scene.position.sub(center);
+      }, undefined, function (error) {
+        alert("Ошибка загрузки модели: " + error);
       });
-    }
 
-    function fitCameraToObject(camera, object) {
-      const box = new THREE.Box3().setFromObject(object);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      camera.position.copy(center).add(new THREE.Vector3(0, maxDim*0.5, maxDim*2));
-      camera.lookAt(center);
-      controls.target.copy(center);
-      controls.update();
-    }
-
-    function animate() {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    }
-
-    // --- AR кнопки для iOS и Android ---
-    const arBtnIOS = document.getElementById('arBtnIOS');
-    const arBtnAndroid = document.getElementById('arBtnAndroid');
-    const usdzLink = document.getElementById('usdzLink');
-    const arHint = document.getElementById('arHint');
-
-    // Определение платформы
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    let arSupported = false;
-
-    if (isIOS && usdzUrl) {
-      usdzLink.href = usdzUrl;
-      usdzLink.classList.remove('hidden');
-      arHint.textContent = "AR просмотр доступен через Apple Quick Look.";
-    } else if (navigator.xr && navigator.xr.isSessionSupported) {
-      // Android: WebXR
-      navigator.xr.isSessionSupported('immersive-ar').then(supported=>{
-        arSupported = supported;
-        if (arSupported) {
-          arBtnAndroid.classList.remove('hidden');
-          arHint.textContent = "AR просмотр доступен через WebXR.";
-        } else {
-          arBtnAndroid.classList.add('hidden');
-          arHint.textContent = "AR просмотр не поддерживается на этом устройстве.";
-        }
+      // Простое вращение мышкой/тачем
+      let isDragging = false, lastX=0, lastY=0;
+      renderer.domElement.addEventListener('pointerdown', (e) => {
+        isDragging = true; lastX = e.clientX; lastY = e.clientY;
       });
-    } else {
-      arHint.textContent = "AR просмотр не поддерживается на этом устройстве.";
-    }
+      window.addEventListener('pointerup', () => isDragging = false);
+      renderer.domElement.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+        const dx = (e.clientX - lastX) * 0.008;
+        const dy = (e.clientY - lastY) * 0.008;
+        scene.rotation.y += dx;
+        scene.rotation.x += dy;
+        lastX = e.clientX; lastY = e.clientY;
+      });
 
-    arBtnAndroid.onclick = () => {
-      if (!arSupported) {
-        alert("AR не поддерживается!");
-        return;
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
       }
-      startAR();
-    };
-
-    // --- AR Viewer (WebXR + Three.js) ---
-    function startAR() {
-      // Простейший AR viewer с WebXR
-      let xrSession;
-      renderer.xr.enabled = true;
-      navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test', 'local-floor']
-      }).then(session => {
-        xrSession = session;
-        renderer.xr.setSession(session);
-
-        // Хит-тест и простое размещение модели по тапу
-        let refSpace, viewerSpace, hitTestSource = null;
-        session.requestReferenceSpace('local-floor').then(rs=>{
-          refSpace = rs;
-          session.requestReferenceSpace('viewer').then(vs=>{
-            viewerSpace = vs;
-            session.requestHitTestSource({ space: viewerSpace }).then(hts=>{
-              hitTestSource = hts;
-            });
-          });
-        });
-
-        const onSelect = (ev) => {
-          // По тапу размещаем объект в точку
-          if (!hitTestSource) return;
-          session.requestAnimationFrame((time, frame) => {
-            const hitTestResults = frame.getHitTestResults(hitTestSource);
-            if (hitTestResults.length > 0) {
-              const hit = hitTestResults[0];
-              const pose = hit.getPose(refSpace);
-              modelObj.position.copy(pose.transform.position);
-            }
-          });
-        };
-        session.addEventListener('select', onSelect);
-
-        animate();
-        session.addEventListener('end', ()=>{
-          renderer.xr.enabled = false;
-        });
-      });
+      animate();
     }
   </script>
 </body>
